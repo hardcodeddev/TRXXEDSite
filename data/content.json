@@ -1,0 +1,68 @@
+
+{
+  "artistName": "TRXXED",
+  "logoUrl": "./images/logo.png",
+  "heroImage": "./images/background.png",
+  "soundcloudEmbedUrl": "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/1865969688&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true",
+  "socials": {
+    "instagram": "https://instagram.com",
+    "twitter": "https://twitter.com",
+    "facebook": "https://facebook.com",
+    "spotify": "https://spotify.com",
+    "soundcloud": "https://soundcloud.com"
+  },
+  "releases": [
+    {
+      "id": "rel1",
+      "title": "Galaxy Drift",
+      "imageUrl": "https://picsum.photos/seed/galaxy/500/500",
+      "links": [
+        { "platform": "spotify", "url": "#" },
+        { "platform": "apple", "url": "#" },
+        { "platform": "beatport", "url": "#" }
+      ]
+    },
+    {
+      "id": "rel2",
+      "title": "Starlight Echoes",
+      "imageUrl": "https://picsum.photos/seed/starlight/500/500",
+      "links": [
+        { "platform": "spotify", "url": "#" },
+        { "platform": "apple", "url": "#" },
+        { "platform": "soundcloud", "url": "#" }
+      ]
+    },
+    {
+      "id": "rel3",
+      "title": "Zero Gravity",
+      "imageUrl": "https://picsum.photos/seed/gravity/500/500",
+      "links": [
+        { "platform": "spotify", "url": "#" },
+        { "platform": "youtube", "url": "#" }
+      ]
+    }
+  ],
+  "shows": [
+    {
+      "id": "show1",
+      "date": "2024-09-15",
+      "venue": "Quantum Arena",
+      "city": "New York, NY",
+      "ticketUrl": "#"
+    },
+    {
+      "id": "show2",
+      "date": "2024-10-22",
+      "venue": "The Void",
+      "city": "Los Angeles, CA",
+      "ticketUrl": "#"
+    },
+    {
+      "id": "show3",
+      "date": "2024-11-05",
+      "venue": "Circuit Grounds",
+      "city": "Miami, FL",
+      "ticketUrl": "#"
+    }
+  ]
+}
