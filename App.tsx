@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Content, Show, Release } from './types';
 import { AdminPanel } from './components/AdminPanel';
@@ -6,75 +5,50 @@ import { PlatformIcon } from './components/icons/PlatformIcons';
 import { Modal } from './components/common/Modal';
 import initialContent from './data/content.json' with { type: 'json' };
 
-const LoginModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  onLogin: (password: string) => boolean;
-}> = ({ isOpen, onClose, onLogin }) => {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (onLogin(password)) {
-      setError('');
-      setPassword('');
-    } else {
-      setError('Invalid password.');
-      setPassword('');
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-        setError('');
-        setPassword('');
-    }
-  }, [isOpen]);
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Admin Login">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <p className="text-sm text-gray-400">Enter the admin password to manage content.</p>
-        <div>
-          <label htmlFor="password-input" className="sr-only">Password</label>
-          <input
-            id="password-input"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent"
-            autoFocus
-          />
-        </div>
-        {error && <p className="text-red-500 text-sm animate-fade-in-up">{error}</p>}
-        <div className="flex justify-end items-center pt-2 gap-4">
-          <button type="button" onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">Cancel</button>
-          <button type="submit" className="bg-hotpink text-white px-4 py-2 rounded hover:bg-hotpink-hover transition-colors">Login</button>
-        </div>
-      </form>
-    </Modal>
-  );
-};
+const sha256 = async (str: string) => {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+    return Array.prototype.map.call(new Uint8Array(buf), x => (('00' + x.toString(16)).slice(-2))).join('');
+}
 
 const App: React.FC = () => {
   const [content, setContent] = useState<Content>(initialContent as Content);
-  const [isAuthenticated, setIsAuthenticated] = useState(sessionStorage.getItem('isAuthenticated') === 'true');
-  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
 
   useEffect(() => {
-    const checkAdminHash = () => {
-      if (window.location.hash === '#admin' && !isAuthenticated) {
-        setShowLoginModal(true);
-      }
+    const passwordHash = localStorage.getItem('adminPasswordHash');
+    if (!passwordHash) {
+      setNeedsPasswordSetup(true);
+    } else {
+      setNeedsPasswordSetup(false);
+    }
+
+    const checkAdminMode = () => {
+        const hash = window.location.hash;
+        if (hash === '#admin') {
+          setIsAdmin(true);
+          // Only show modal if admin is requested and not logged in
+          if (!isLoggedIn) {
+            setShowAuthModal(true);
+          }
+        } else {
+          setIsAdmin(false);
+          setShowAuthModal(false);
+          // Log out when leaving admin section
+          if (isLoggedIn) {
+            setIsLoggedIn(false);
+          }
+        }
     };
-    checkAdminHash();
-    window.addEventListener('hashchange', checkAdminHash);
+
+    checkAdminMode();
+    window.addEventListener('hashchange', checkAdminMode);
     return () => {
-      window.removeEventListener('hashchange', checkAdminHash);
+        window.removeEventListener('hashchange', checkAdminMode);
     };
-  }, [isAuthenticated]);
+  }, [isLoggedIn]);
 
   if (!content) {
     return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl">Error: Content could not be loaded.</div>;
@@ -83,62 +57,115 @@ const App: React.FC = () => {
   const handleContentChange = (newContent: Content) => {
     setContent(newContent);
   };
-  
-  const handleLogin = (password: string): boolean => {
-    // NOTE: This is for demonstration. In a real app, use a secure auth provider.
-    const ADMIN_PASSWORD = 'nebula_admin_2024';
-    if (password === ADMIN_PASSWORD) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem('isAuthenticated', 'true');
-        setShowLoginModal(false);
-        if (window.location.hash !== '#admin') {
-            window.location.hash = '#admin';
-        }
-        return true;
-    }
-    return false;
-  };
 
   const handleLogout = () => {
-      setIsAuthenticated(false);
-      sessionStorage.removeItem('isAuthenticated');
-      if (window.location.hash === '#admin') {
-          window.location.hash = '';
-      }
-  };
-  
-  const handleAdminClick = () => {
-      if (isAuthenticated) {
-          handleLogout();
-      } else {
-          setShowLoginModal(true);
-      }
-  };
-
-  const handleCloseLoginModal = () => {
-    setShowLoginModal(false);
-    if (window.location.hash === '#admin') {
-      window.location.hash = '';
-    }
-  };
+    setIsLoggedIn(false);
+    window.location.hash = '';
+  }
 
   return (
-    <div className={`bg-primary text-gray-200 min-h-screen transition-all duration-300 ${isAuthenticated ? 'pb-80' : ''}`}>
+    <div className={`bg-primary text-gray-200 min-h-screen ${isAdmin && isLoggedIn ? 'pb-80' : ''}`}>
       <Header content={content} />
       <main>
         <HeroSection content={content} />
         <MusicSection content={content} />
         <ShowsSection content={content} />
       </main>
-      <Footer content={content} isAuthenticated={isAuthenticated} onAdminClick={handleAdminClick} />
-      {isAuthenticated && <AdminPanel content={content} onContentChange={handleContentChange} />}
-      <LoginModal 
-        isOpen={showLoginModal}
-        onClose={handleCloseLoginModal}
-        onLogin={handleLogin}
-      />
+      <Footer content={content} onLogout={handleLogout} isLoggedIn={isLoggedIn} />
+      {isAdmin && isLoggedIn && <AdminPanel content={content} onContentChange={handleContentChange} />}
+      {showAuthModal && (
+        <AuthModal
+          needsSetup={needsPasswordSetup}
+          onClose={() => {
+            setShowAuthModal(false);
+            if (window.location.hash === '#admin') {
+              window.location.hash = '';
+            }
+          }}
+          onLoginSuccess={() => {
+            setIsLoggedIn(true);
+            setShowAuthModal(false);
+          }}
+          onPasswordSet={() => {
+            setNeedsPasswordSetup(false);
+            setIsLoggedIn(true);
+            setShowAuthModal(false);
+          }}
+        />
+      )}
     </div>
   );
+};
+
+interface AuthModalProps {
+  needsSetup: boolean;
+  onClose: () => void;
+  onLoginSuccess: () => void;
+  onPasswordSet: () => void;
+}
+
+const AuthModal: React.FC<AuthModalProps> = ({ needsSetup, onClose, onLoginSuccess, onPasswordSet }) => {
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        const storedHash = localStorage.getItem('adminPasswordHash');
+        if (!storedHash) {
+            setError('No password has been set up.');
+            return;
+        }
+        const enteredHash = await sha256(password);
+        if (enteredHash === storedHash) {
+            onLoginSuccess();
+        } else {
+            setError('Incorrect password.');
+        }
+    };
+
+    const handleSetup = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        if (password.length < 8) {
+            setError('Password must be at least 8 characters long.');
+            return;
+        }
+        if (password !== confirmPassword) {
+            setError('Passwords do not match.');
+            return;
+        }
+        const newHash = await sha256(password);
+        localStorage.setItem('adminPasswordHash', newHash);
+        onPasswordSet();
+    };
+
+    return (
+        <Modal isOpen={true} onClose={onClose} title={needsSetup ? 'Admin Password Setup' : 'Admin Login'}>
+            {needsSetup ? (
+                <form onSubmit={handleSetup} className="space-y-4">
+                    <p className="text-gray-400">Create a secure password to protect the admin panel.</p>
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="New Password (min 8 chars)" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+                    <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm New Password" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                    <div className="flex justify-end items-center pt-2 gap-4">
+                        <button type="button" onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">Cancel</button>
+                        <button type="submit" className="bg-hotpink text-white px-4 py-2 rounded hover:bg-hotpink-hover transition-colors">Set Password</button>
+                    </div>
+                </form>
+            ) : (
+                <form onSubmit={handleLogin} className="space-y-4">
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required autoFocus className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                    <div className="flex justify-end items-center pt-2 gap-4">
+                        <button type="button" onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">Cancel</button>
+                        <button type="submit" className="bg-hotpink text-white px-4 py-2 rounded hover:bg-hotpink-hover transition-colors">Login</button>
+                    </div>
+                </form>
+            )}
+        </Modal>
+    );
 };
 
 const Header: React.FC<{ content: Content }> = ({ content }) => (
@@ -188,7 +215,6 @@ const HeroSection: React.FC<{ content: Content }> = ({ content }) => (
     animation: black-pulse 2.5s ease-in-out infinite;
   }
 `}</style>
-
        <a href="#music" className="mt-8 bg-accent text-primary font-bold font-heading px-8 py-3 rounded-full shadow-lg hover:bg-accent-hover transition-all transform hover:scale-105 uppercase tracking-widest">
         Explore Music
       </a>
@@ -277,11 +303,19 @@ const ShowItem: React.FC<{ show: Show; index: number }> = ({ show, index }) => {
   );
 };
 
-const Footer: React.FC<{
-  content: Content;
-  isAuthenticated: boolean;
-  onAdminClick: () => void;
-}> = ({ content, isAuthenticated, onAdminClick }) => {
+interface FooterProps {
+    content: Content;
+    isLoggedIn: boolean;
+    onLogout: () => void;
+}
+const Footer: React.FC<FooterProps> = ({ content, isLoggedIn, onLogout }) => {
+    const toggleAdmin = () => {
+        if (window.location.hash === '#admin') {
+            onLogout();
+        } else {
+            window.location.hash = '#admin';
+        }
+    }
     return (
         <footer className="bg-primary border-t border-secondary/50 py-8 text-center text-gray-500">
             <div className="container mx-auto">
@@ -293,26 +327,16 @@ const Footer: React.FC<{
                     ))}
                 </div>
                 <p>&copy; {new Date().getFullYear()} {content.artistName}. All Rights Reserved.</p>
-                <button onClick={onAdminClick} title={isAuthenticated ? "Logout" : "Admin Login"} className="mt-4 text-gray-600 hover:text-accent transition-colors">
-                     {isAuthenticated ? (
-                        <>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 inline-block">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
-                            </svg>
-                            <span className="text-xs ml-1">Logout</span>
-                        </>
-                    ) : (
-                        <>
-                            <svg className="w-5 h-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-                            </svg>
-                            <span className="text-xs ml-1">Admin</span>
-                        </>
-                    )}
+                <button onClick={toggleAdmin} title={isLoggedIn ? "Logout from Admin" : "Toggle Admin Panel"} className="mt-4 text-gray-600 hover:text-accent transition-colors">
+                     <svg className="w-5 h-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                    </svg>
+                    <span className="text-xs ml-1">{isLoggedIn ? 'Logout' : 'Admin'}</span>
                 </button>
             </div>
         </footer>
     );
 }
+
 
 export default App;

@@ -7,10 +7,16 @@ interface AdminPanelProps {
   onContentChange: (newContent: Content) => void;
 }
 
+const sha256 = async (str: string) => {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+    return Array.prototype.map.call(new Uint8Array(buf), x => (('00' + x.toString(16)).slice(-2))).join('');
+}
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({ content, onContentChange }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Show | Release | null>(null);
   const [modalType, setModalType] = useState<'show' | 'release' | null>(null);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
 
   const handleDownloadJson = () => {
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
@@ -105,9 +111,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ content, onContentChange
         </div>
 
         <div className="text-center mt-6">
-            <button onClick={handleDownloadJson} className="bg-hotpink text-white font-bold px-6 py-2 rounded-lg shadow-lg hover:bg-hotpink-hover transition-all transform hover:scale-105">
-                Download Updated content.json
-            </button>
+            <div className="flex justify-center gap-4 mb-2">
+                 <button onClick={() => setIsChangePasswordModalOpen(true)} className="bg-accent text-primary font-bold px-6 py-2 rounded-lg shadow-lg hover:bg-accent-hover transition-all transform hover:scale-105">
+                    Change Password
+                </button>
+                <button onClick={handleDownloadJson} className="bg-hotpink text-white font-bold px-6 py-2 rounded-lg shadow-lg hover:bg-hotpink-hover transition-all transform hover:scale-105">
+                    Download Updated content.json
+                </button>
+            </div>
             <p className="text-sm text-gray-400 mt-2">After downloading, replace the existing 'content.json' in the project's 'data' folder and redeploy.</p>
         </div>
       </div>
@@ -125,8 +136,76 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ content, onContentChange
             )}
         </Modal>
       )}
+
+      <Modal isOpen={isChangePasswordModalOpen} onClose={() => setIsChangePasswordModalOpen(false)} title="Change Admin Password">
+        <ChangePasswordForm onClose={() => setIsChangePasswordModalOpen(false)} />
+      </Modal>
     </div>
   );
+};
+
+const ChangePasswordForm: React.FC<{onClose: () => void}> = ({ onClose }) => {
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        setSuccess('');
+
+        if (newPassword !== confirmPassword) {
+            setError('New passwords do not match.');
+            return;
+        }
+        if (newPassword.length < 8) {
+            setError('New password must be at least 8 characters long.');
+            return;
+        }
+
+        const storedHash = localStorage.getItem('adminPasswordHash');
+        if (!storedHash) {
+            setError('No password set. This is unexpected.');
+            return;
+        }
+        
+        const currentPasswordHash = await sha256(currentPassword);
+
+        if (currentPasswordHash !== storedHash) {
+            setError('Current password is incorrect.');
+            return;
+        }
+        
+        const newPasswordHash = await sha256(newPassword);
+        localStorage.setItem('adminPasswordHash', newPasswordHash);
+        setSuccess('Password updated successfully!');
+        
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+
+        setTimeout(() => {
+            onClose();
+        }, 1500);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder="Current Password" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="New Password" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm New Password" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+            
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {success && <p className="text-green-500 text-sm">{success}</p>}
+
+            <div className="flex justify-end items-center pt-2 gap-4">
+                <button type="button" onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">Cancel</button>
+                <button type="submit" className="bg-hotpink text-white px-4 py-2 rounded hover:bg-hotpink-hover transition-colors">Save Changes</button>
+            </div>
+        </form>
+    );
 };
 
 
