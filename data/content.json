@@ -14,12 +14,10 @@
   "releases": [
     {
       "id": "rel1",
-      "title": "Galaxy Drift",
-      "imageUrl": "https://picsum.photos/seed/galaxy/500/500",
+      "title": "MDMA - Disco Lines (9B49 X Masta Plan Remix) [Sully Master V2]",
+      "imageUrl": "./images/song1.png",
       "links": [
-        { "platform": "spotify", "url": "#" },
-        { "platform": "apple", "url": "#" },
-        { "platform": "beatport", "url": "#" }
+        { "platform": "soundcloud", "url": "https://soundcloud.com/9b49/mdma-disco-lines-9b49-x-masta-plan-remix-sully-master-v2" }
       ]
     },
     {

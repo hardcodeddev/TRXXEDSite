@@ -1,23 +1,80 @@
+
 import React, { useState, useEffect } from 'react';
 import { Content, Show, Release } from './types';
 import { AdminPanel } from './components/AdminPanel';
 import { PlatformIcon } from './components/icons/PlatformIcons';
+import { Modal } from './components/common/Modal';
 import initialContent from './data/content.json' with { type: 'json' };
+
+const LoginModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onLogin: (password: string) => boolean;
+}> = ({ isOpen, onClose, onLogin }) => {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onLogin(password)) {
+      setError('');
+      setPassword('');
+    } else {
+      setError('Invalid password.');
+      setPassword('');
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+        setError('');
+        setPassword('');
+    }
+  }, [isOpen]);
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Admin Login">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-400">Enter the admin password to manage content.</p>
+        <div>
+          <label htmlFor="password-input" className="sr-only">Password</label>
+          <input
+            id="password-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent"
+            autoFocus
+          />
+        </div>
+        {error && <p className="text-red-500 text-sm animate-fade-in-up">{error}</p>}
+        <div className="flex justify-end items-center pt-2 gap-4">
+          <button type="button" onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">Cancel</button>
+          <button type="submit" className="bg-hotpink text-white px-4 py-2 rounded hover:bg-hotpink-hover transition-colors">Login</button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
 
 const App: React.FC = () => {
   const [content, setContent] = useState<Content>(initialContent as Content);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(sessionStorage.getItem('isAuthenticated') === 'true');
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
-    const checkAdminMode = () => {
-        setIsAdmin(window.location.hash === '#admin');
+    const checkAdminHash = () => {
+      if (window.location.hash === '#admin' && !isAuthenticated) {
+        setShowLoginModal(true);
+      }
     };
-    checkAdminMode();
-    window.addEventListener('hashchange', checkAdminMode);
+    checkAdminHash();
+    window.addEventListener('hashchange', checkAdminHash);
     return () => {
-        window.removeEventListener('hashchange', checkAdminMode);
+      window.removeEventListener('hashchange', checkAdminHash);
     };
-  }, []);
+  }, [isAuthenticated]);
 
   if (!content) {
     return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl">Error: Content could not be loaded.</div>;
@@ -26,17 +83,60 @@ const App: React.FC = () => {
   const handleContentChange = (newContent: Content) => {
     setContent(newContent);
   };
+  
+  const handleLogin = (password: string): boolean => {
+    // NOTE: This is for demonstration. In a real app, use a secure auth provider.
+    const ADMIN_PASSWORD = 'nebula_admin_2024';
+    if (password === ADMIN_PASSWORD) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('isAuthenticated', 'true');
+        setShowLoginModal(false);
+        if (window.location.hash !== '#admin') {
+            window.location.hash = '#admin';
+        }
+        return true;
+    }
+    return false;
+  };
+
+  const handleLogout = () => {
+      setIsAuthenticated(false);
+      sessionStorage.removeItem('isAuthenticated');
+      if (window.location.hash === '#admin') {
+          window.location.hash = '';
+      }
+  };
+  
+  const handleAdminClick = () => {
+      if (isAuthenticated) {
+          handleLogout();
+      } else {
+          setShowLoginModal(true);
+      }
+  };
+
+  const handleCloseLoginModal = () => {
+    setShowLoginModal(false);
+    if (window.location.hash === '#admin') {
+      window.location.hash = '';
+    }
+  };
 
   return (
-    <div className={`bg-primary text-gray-200 min-h-screen ${isAdmin ? 'pb-80' : ''}`}>
+    <div className={`bg-primary text-gray-200 min-h-screen transition-all duration-300 ${isAuthenticated ? 'pb-80' : ''}`}>
       <Header content={content} />
       <main>
         <HeroSection content={content} />
         <MusicSection content={content} />
         <ShowsSection content={content} />
       </main>
-      <Footer content={content} />
-      {isAdmin && <AdminPanel content={content} onContentChange={handleContentChange} />}
+      <Footer content={content} isAuthenticated={isAuthenticated} onAdminClick={handleAdminClick} />
+      {isAuthenticated && <AdminPanel content={content} onContentChange={handleContentChange} />}
+      <LoginModal 
+        isOpen={showLoginModal}
+        onClose={handleCloseLoginModal}
+        onLogin={handleLogin}
+      />
     </div>
   );
 };
@@ -72,9 +172,8 @@ const HeroSection: React.FC<{ content: Content }> = ({ content }) => (
     fontFamily: "'Creepster', cursive",
   }}
 >
-  TRXXED
+  {content.artistName}
 </h1>
-
 <style jsx global>{`
   @keyframes black-pulse {
     0%, 100% {
@@ -178,14 +277,11 @@ const ShowItem: React.FC<{ show: Show; index: number }> = ({ show, index }) => {
   );
 };
 
-const Footer: React.FC<{ content: Content }> = ({ content }) => {
-    const toggleAdmin = () => {
-        if (window.location.hash === '#admin') {
-            window.location.hash = '';
-        } else {
-            window.location.hash = '#admin';
-        }
-    }
+const Footer: React.FC<{
+  content: Content;
+  isAuthenticated: boolean;
+  onAdminClick: () => void;
+}> = ({ content, isAuthenticated, onAdminClick }) => {
     return (
         <footer className="bg-primary border-t border-secondary/50 py-8 text-center text-gray-500">
             <div className="container mx-auto">
@@ -197,16 +293,26 @@ const Footer: React.FC<{ content: Content }> = ({ content }) => {
                     ))}
                 </div>
                 <p>&copy; {new Date().getFullYear()} {content.artistName}. All Rights Reserved.</p>
-                <button onClick={toggleAdmin} title="Toggle Admin Panel" className="mt-4 text-gray-600 hover:text-accent transition-colors">
-                     <svg className="w-5 h-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-                    </svg>
-                    <span className="text-xs ml-1">Admin</span>
+                <button onClick={onAdminClick} title={isAuthenticated ? "Logout" : "Admin Login"} className="mt-4 text-gray-600 hover:text-accent transition-colors">
+                     {isAuthenticated ? (
+                        <>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 inline-block">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                            </svg>
+                            <span className="text-xs ml-1">Logout</span>
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-5 h-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                            </svg>
+                            <span className="text-xs ml-1">Admin</span>
+                        </>
+                    )}
                 </button>
             </div>
         </footer>
     );
 }
-
 
 export default App;
