@@ -191,9 +191,29 @@ const HeroSection: React.FC<{ artistInfo: ArtistInfo }> = ({ artistInfo }) => (
   <section id="home" className="relative h-[80vh] min-h-[500px] flex items-center justify-center text-center bg-cover bg-center" style={{ backgroundImage: `url(${artistInfo.hero_image})` }}>
     <div className="absolute inset-0 bg-primary bg-opacity-60"></div>
     <div className="relative z-10 px-4">
-      <h1 className="text-6xl md:text-8xl lg:text-9xl font-heading font-bold text-white uppercase animate-glow">
+      <h1
+        className="text-[100px] font-bold uppercase text-[#c62828] relative z-10 pulsating-black"
+        style={{
+          fontFamily: "'Creepster', cursive",
+        }}
+      >
         {artistInfo.artist_name}
       </h1>
+      <style jsx global>{`
+  @keyframes black-pulse {
+    0%, 100% {
+      text-shadow: 0 0 5px black;
+    }
+    50% {
+      text-shadow: 0 0 15px black, 0 0 25px black, 0 0 35px black;
+    }
+  }
+
+  .pulsating-black {
+    animation: black-pulse 2.5s ease-in-out infinite;
+  }
+`}</style>
+
       <a href="#music" className="mt-8 inline-block bg-accent text-primary font-bold uppercase px-8 py-3 rounded-full hover:bg-accent-hover transition-transform transform hover:scale-105">
         Listen Now
       </a>
