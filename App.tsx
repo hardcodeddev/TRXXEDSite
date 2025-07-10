@@ -102,7 +102,6 @@ const App: React.FC = () => {
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl animate-pulse">Loading...</div>;
   }
-
   if (error || !artistInfo) {
     return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl p-8 text-center">{error}</div>;
   }
