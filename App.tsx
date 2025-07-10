@@ -106,6 +106,7 @@ const App: React.FC = () => {
   if (error || !artistInfo) {
     return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl p-8 text-center">{error}</div>;
   }
+  console.log(artistInfo.logo_url);
 
   return (
     <div className={`bg-primary text-gray-200 min-h-screen ${isAdmin && session ? 'pb-96' : ''}`}>
