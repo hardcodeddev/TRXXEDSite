@@ -1,342 +1,281 @@
+
+
 import React, { useState, useEffect } from 'react';
-import { Content, Show, Release } from './types';
+import { ArtistInfo, Show, Release, Socials } from './types';
 import { AdminPanel } from './components/AdminPanel';
 import { PlatformIcon } from './components/icons/PlatformIcons';
 import { Modal } from './components/common/Modal';
-import initialContent from './data/content.json' with { type: 'json' };
-
-const sha256 = async (str: string) => {
-    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-    return Array.prototype.map.call(new Uint8Array(buf), x => (('00' + x.toString(16)).slice(-2))).join('');
-}
+import { supabase } from './supabase/supabase';
+import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
-  const [content, setContent] = useState<Content>(initialContent as Content);
+  const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
+  const [artistInfo, setArtistInfo] = useState<ArtistInfo | null>(null);
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [shows, setShows] = useState<Show[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const passwordHash = localStorage.getItem('adminPasswordHash');
-    if (!passwordHash) {
-      setNeedsPasswordSetup(true);
-    } else {
-      setNeedsPasswordSetup(false);
-    }
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data: artistInfoData, error: artistInfoError } = await supabase
+          .from('artist_info')
+          .select('*')
+          .single();
+        if (artistInfoError) throw artistInfoError;
+        setArtistInfo(artistInfoData);
 
-    const checkAdminMode = () => {
-        const hash = window.location.hash;
-        if (hash === '#admin') {
-          setIsAdmin(true);
-          // Only show modal if admin is requested and not logged in
-          if (!isLoggedIn) {
-            setShowAuthModal(true);
-          }
-        } else {
-          setIsAdmin(false);
-          setShowAuthModal(false);
-          // Log out when leaving admin section
-          if (isLoggedIn) {
-            setIsLoggedIn(false);
-          }
-        }
+        const { data: showsData, error: showsError } = await supabase
+          .from('shows')
+          .select('*')
+          .order('date', { ascending: true });
+        if (showsError) throw showsError;
+        setShows(showsData);
+
+        const { data: releasesData, error: releasesError } = await supabase
+          .from('releases')
+          .select(`
+                *,
+                release_links (
+                    *
+                )
+            `)
+          .order('id', { ascending: false });
+        if (releasesError) throw releasesError;
+        setReleases(releasesData as Release[]);
+
+      } catch (err: any) {
+        console.error("Error fetching data:", err);
+        setError("Could not load artist data. Please check the connection and configuration.");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    checkAdminMode();
-    window.addEventListener('hashchange', checkAdminMode);
+    fetchData();
+
+    // Set up auth listener
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    // Set up admin panel visibility listener
+    const handleHashChange = () => {
+      setIsAdmin(window.location.hash === '#admin');
+    };
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+
     return () => {
-        window.removeEventListener('hashchange', checkAdminMode);
+      subscription.unsubscribe();
+      window.removeEventListener('hashchange', handleHashChange);
     };
-  }, [isLoggedIn]);
+  }, []);
 
-  if (!content) {
-    return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl">Error: Content could not be loaded.</div>;
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   }
-  
-  const handleContentChange = (newContent: Content) => {
-    setContent(newContent);
-  };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    window.location.hash = '';
+  const refreshData = async () => {
+    // This is a simplified refresh, a more robust solution might involve re-fetching specific data
+    const { data: showsData, error: showsError } = await supabase
+      .from('shows')
+      .select('*')
+      .order('date', { ascending: true });
+    if (showsData) setShows(showsData);
+
+    const { data: releasesData, error: releasesError } = await supabase
+      .from('releases')
+      .select(`*, release_links(*)`)
+      .order('id', { ascending: false });
+    if (releasesData) setReleases(releasesData as Release[]);
+  }
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl animate-pulse">Loading...</div>;
+  }
+
+  if (error || !artistInfo) {
+    return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl p-8 text-center">{error}</div>;
   }
 
   return (
-    <div className={`bg-primary text-gray-200 min-h-screen ${isAdmin && isLoggedIn ? 'pb-80' : ''}`}>
-      <Header content={content} />
+    <div className={`bg-primary text-gray-200 min-h-screen ${isAdmin && session ? 'pb-96' : ''}`}>
+      <Header artistInfo={artistInfo} />
       <main>
-        <HeroSection content={content} />
-        <MusicSection content={content} />
-        <ShowsSection content={content} />
+        <HeroSection artistInfo={artistInfo} />
+        <MusicSection releases={releases} artistInfo={artistInfo} />
+        <ShowsSection shows={shows} />
       </main>
-      <Footer content={content} onLogout={handleLogout} isLoggedIn={isLoggedIn} />
-      {isAdmin && isLoggedIn && <AdminPanel content={content} onContentChange={handleContentChange} />}
-      {showAuthModal && (
-        <AuthModal
-          needsSetup={needsPasswordSetup}
-          onClose={() => {
-            setShowAuthModal(false);
-            if (window.location.hash === '#admin') {
-              window.location.hash = '';
-            }
-          }}
-          onLoginSuccess={() => {
-            setIsLoggedIn(true);
-            setShowAuthModal(false);
-          }}
-          onPasswordSet={() => {
-            setNeedsPasswordSetup(false);
-            setIsLoggedIn(true);
-            setShowAuthModal(false);
-          }}
-        />
-      )}
+      <Footer artistInfo={artistInfo} onLogout={handleLogout} isLoggedIn={!!session} />
+      {isAdmin && !session && <Auth />}
+      {isAdmin && session && <AdminPanel shows={shows} releases={releases} onDataChange={refreshData} />}
     </div>
   );
 };
 
-interface AuthModalProps {
-  needsSetup: boolean;
-  onClose: () => void;
-  onLoginSuccess: () => void;
-  onPasswordSet: () => void;
-}
+// Authentication Component
+const Auth: React.FC = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-const AuthModal: React.FC<AuthModalProps> = ({ needsSetup, onClose, onLoginSuccess, onPasswordSet }) => {
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [error, setError] = useState('');
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        setSuccessMessage("Sign up successful! You can now sign in using the 'Sign In' tab.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      setError(err.error_description || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        const storedHash = localStorage.getItem('adminPasswordHash');
-        if (!storedHash) {
-            setError('No password has been set up.');
-            return;
-        }
-        const enteredHash = await sha256(password);
-        if (enteredHash === storedHash) {
-            onLoginSuccess();
-        } else {
-            setError('Incorrect password.');
-        }
-    };
+  return (
+    <Modal isOpen={true} onClose={() => { window.location.hash = '' }} title={isSignUp ? 'Admin Sign Up' : 'Admin Login'}>
+      <div className="p-4">
+        <div className="flex border-b border-gray-700 mb-4">
+          <button onClick={() => setIsSignUp(false)} className={`py-2 px-4 font-semibold ${!isSignUp ? 'text-accent border-b-2 border-accent' : 'text-gray-400'}`}>Sign In</button>
+          <button onClick={() => setIsSignUp(true)} className={`py-2 px-4 font-semibold ${isSignUp ? 'text-accent border-b-2 border-accent' : 'text-gray-400'}`}>Sign Up</button>
+        </div>
 
-    const handleSetup = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        if (password.length < 8) {
-            setError('Password must be at least 8 characters long.');
-            return;
-        }
-        if (password !== confirmPassword) {
-            setError('Passwords do not match.');
-            return;
-        }
-        const newHash = await sha256(password);
-        localStorage.setItem('adminPasswordHash', newHash);
-        onPasswordSet();
-    };
-
-    return (
-        <Modal isOpen={true} onClose={onClose} title={needsSetup ? 'Admin Password Setup' : 'Admin Login'}>
-            {needsSetup ? (
-                <form onSubmit={handleSetup} className="space-y-4">
-                    <p className="text-gray-400">Create a secure password to protect the admin panel.</p>
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="New Password (min 8 chars)" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
-                    <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm New Password" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
-                    {error && <p className="text-red-500 text-sm">{error}</p>}
-                    <div className="flex justify-end items-center pt-2 gap-4">
-                        <button type="button" onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">Cancel</button>
-                        <button type="submit" className="bg-hotpink text-white px-4 py-2 rounded hover:bg-hotpink-hover transition-colors">Set Password</button>
-                    </div>
-                </form>
-            ) : (
-                <form onSubmit={handleLogin} className="space-y-4">
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required autoFocus className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
-                    {error && <p className="text-red-500 text-sm">{error}</p>}
-                    <div className="flex justify-end items-center pt-2 gap-4">
-                        <button type="button" onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">Cancel</button>
-                        <button type="submit" className="bg-hotpink text-white px-4 py-2 rounded hover:bg-hotpink-hover transition-colors">Login</button>
-                    </div>
-                </form>
-            )}
-        </Modal>
-    );
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <p className="text-sm text-gray-400">
+            {isSignUp ? 'Create the admin account. This should only be done once.' : 'Sign in to manage content.'}
+          </p>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
+          {successMessage && !error && <p className="text-green-400 text-sm">{successMessage}</p>}
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+          <button type="submit" disabled={loading} className="w-full bg-hotpink text-white font-bold px-4 py-2 rounded hover:bg-hotpink-hover transition-colors disabled:bg-gray-500">
+            {loading ? 'Loading...' : (isSignUp ? 'Sign Up' : 'Sign In')}
+          </button>
+        </form>
+      </div>
+    </Modal>
+  );
 };
 
-const Header: React.FC<{ content: Content }> = ({ content }) => (
-  <header className="sticky top-0 left-0 right-0 z-30 p-4 bg-primary/80 backdrop-blur-md border-b border-secondary/50">
-    <div className="container mx-auto flex justify-between items-center">
-      <a href="#"><img src={content.logoUrl} alt={`${content.artistName} Logo`} className="h-10 md:h-12" /></a>
-      <nav className="hidden md:flex items-center space-x-6">
-          <a href="#music" className="font-semibold hover:text-accent transition-colors">Music</a>
-          <a href="#tour" className="font-semibold hover:text-accent transition-colors">Tour</a>
-      </nav>
-      <div className="flex items-center space-x-4">
-        {Object.entries(content.socials).map(([platform, url]) => (
-          <a key={platform} href={url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-accent transition-colors">
-            <PlatformIcon platform={platform as any} className="w-6 h-6"/>
-          </a>
-        ))}
-      </div>
+
+// UI Components
+const Header: React.FC<{ artistInfo: ArtistInfo }> = ({ artistInfo }) => (
+  <header className="absolute top-0 left-0 right-0 z-10 p-4">
+    <div className="container mx-auto flex justify-center md:justify-start">
+      <img src={artistInfo.logo_url || ''} alt={`${artistInfo.artist_name} Logo`} className="h-10 md:h-12" />
     </div>
   </header>
 );
 
-const HeroSection: React.FC<{ content: Content }> = ({ content }) => (
-  <section 
-    className="relative min-h-screen flex items-center justify-center text-center bg-cover bg-center bg-fixed" 
-    style={{ backgroundImage: `url(${content.heroImage})` }}>
-    <div className="absolute inset-0 bg-black/70"></div>
-    <div className="relative z-10 p-4 flex flex-col items-center">
-    <h1
-  className="text-[100px] font-bold uppercase text-[#c62828] relative z-10 pulsating-black"
-  style={{
-    fontFamily: "'Creepster', cursive",
-  }}
->
-  {content.artistName}
-</h1>
-<style jsx global>{`
-  @keyframes black-pulse {
-    0%, 100% {
-      text-shadow: 0 0 5px black;
-    }
-    50% {
-      text-shadow: 0 0 15px black, 0 0 25px black, 0 0 35px black;
-    }
-  }
-
-  .pulsating-black {
-    animation: black-pulse 2.5s ease-in-out infinite;
-  }
-`}</style>
-       <a href="#music" className="mt-8 bg-accent text-primary font-bold font-heading px-8 py-3 rounded-full shadow-lg hover:bg-accent-hover transition-all transform hover:scale-105 uppercase tracking-widest">
-        Explore Music
+const HeroSection: React.FC<{ artistInfo: ArtistInfo }> = ({ artistInfo }) => (
+  <section id="home" className="relative h-[80vh] min-h-[500px] flex items-center justify-center text-center bg-cover bg-center" style={{ backgroundImage: `url(${artistInfo.hero_image})` }}>
+    <div className="absolute inset-0 bg-primary bg-opacity-60"></div>
+    <div className="relative z-10 px-4">
+      <h1 className="text-6xl md:text-8xl lg:text-9xl font-heading font-bold text-white uppercase animate-glow">
+        {artistInfo.artist_name}
+      </h1>
+      <a href="#music" className="mt-8 inline-block bg-accent text-primary font-bold uppercase px-8 py-3 rounded-full hover:bg-accent-hover transition-transform transform hover:scale-105">
+        Listen Now
       </a>
     </div>
   </section>
 );
 
-const MusicSection: React.FC<{ content: Content }> = ({ content }) => (
-    <section id="music" className="py-20 bg-primary">
-        <div className="container mx-auto px-4">
-            <h2 className="text-5xl font-heading font-bold text-center mb-12 text-accent uppercase tracking-wider">Latest Releases</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
-                {content.releases.map(release => <ReleaseCard key={release.id} release={release} />)}
-            </div>
-            <h2 className="text-5xl font-heading font-bold text-center mb-8 text-accent uppercase tracking-wider">SoundCloud</h2>
-            <div className="w-full max-w-4xl mx-auto rounded-lg overflow-hidden border-2 border-secondary">
-              <iframe 
-                width="100%" 
-                height="450" 
-                scrolling="no" 
-                frameBorder="no" 
-                allow="autoplay" 
-                src={content.soundcloudEmbedUrl}>
-              </iframe>
-            </div>
-        </div>
-    </section>
-);
-
-const ReleaseCard: React.FC<{ release: Release }> = ({ release }) => (
-    <div className="bg-secondary rounded-lg overflow-hidden shadow-lg transform hover:-translate-y-2 transition-transform duration-300 group border border-transparent hover:border-accent">
-        <div className="overflow-hidden">
-          <img src={release.imageUrl} alt={release.title} className="w-full h-72 object-cover group-hover:scale-105 transition-transform duration-500" />
-        </div>
-        <div className="p-6">
-            <h3 className="text-2xl font-bold font-heading mb-4 truncate">{release.title}</h3>
-            <div className="flex space-x-4">
-                {release.links.map(link => (
-                    <a key={link.platform} href={link.url} target="_blank" rel="noopener noreferrer" 
-                       className="text-gray-400 hover:text-accent transition-colors transform hover:scale-110">
-                        <PlatformIcon platform={link.platform} className="w-8 h-8"/>
-                    </a>
-                ))}
-            </div>
-        </div>
-    </div>
-);
-
-const ShowsSection: React.FC<{ content: Content }> = ({ content }) => (
-  <section id="tour" className="py-20 bg-secondary">
+const MusicSection: React.FC<{ releases: Release[], artistInfo: ArtistInfo }> = ({ releases, artistInfo }) => (
+  <section id="music" className="py-20 bg-secondary">
     <div className="container mx-auto px-4">
-      <h2 className="text-5xl font-heading font-bold text-center mb-12 text-accent uppercase tracking-wider">Upcoming Shows</h2>
-      <div className="max-w-4xl mx-auto">
-        <ul className="space-y-4">
-          {content.shows.map((show, index) => <ShowItem key={show.id} show={show} index={index}/>)}
-        </ul>
+      <h2 className="text-4xl font-heading text-center mb-12">Music</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {releases.map((release, index) => (
+          <div key={release.id} className="bg-primary p-4 rounded-lg shadow-lg group opacity-0 animate-fade-in-up" style={{ animationDelay: `${index * 150}ms` }}>
+            <img src={release.image_url || ''} alt={release.title || ''} className="w-full h-auto object-cover rounded-md mb-4" />
+            <h3 className="text-xl font-bold mb-2">{release.title}</h3>
+            <div className="flex space-x-4">
+              {(release.release_links || []).map(link => (
+                <a key={link.id} href={link.url || '#'} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-accent transition-colors">
+                  <PlatformIcon platform={link.platform} />
+                </a>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-16">
+        {artistInfo.soundcloud_embed_url && (
+          <iframe
+            width="100%"
+            height="166"
+            scrolling="no"
+            frameBorder="no"
+            allow="autoplay"
+            src={artistInfo.soundcloud_embed_url}>
+          </iframe>
+        )}
       </div>
     </div>
   </section>
 );
 
-const ShowItem: React.FC<{ show: Show; index: number }> = ({ show, index }) => {
-  const date = new Date(show.date + 'T00:00:00'); // Treat date as local
-  const day = date.toLocaleDateString('en-US', { day: '2-digit' });
-  const month = date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-
-  return (
-    <li 
-        className="flex flex-col md:flex-row items-center justify-between bg-primary p-4 rounded-lg shadow-md hover:bg-gray-900 transition-all duration-300 opacity-0 animate-fade-in-up"
-        style={{ animationDelay: `${index * 150}ms`, animationFillMode: 'forwards' }}
-    >
-      <div className="flex items-center mb-4 md:mb-0 text-center md:text-left">
-        <div className="text-center w-20 mr-6 border-r-2 border-accent/30 pr-6">
-          <p className="text-4xl font-bold text-accent">{day}</p>
-          <p className="text-md font-semibold tracking-widest">{month}</p>
-        </div>
-        <div>
-          <h3 className="text-xl font-bold font-heading">{show.venue}</h3>
-          <p className="text-gray-400">{show.city}</p>
-        </div>
+const ShowsSection: React.FC<{ shows: Show[] }> = ({ shows }) => (
+  <section id="shows" className="py-20">
+    <div className="container mx-auto px-4">
+      <h2 className="text-4xl font-heading text-center mb-12">Tour Dates</h2>
+      <div className="max-w-4xl mx-auto">
+        {shows.map(show => (
+          <div key={show.id} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center mb-4 p-4 bg-secondary rounded-lg">
+            <div className="text-gray-400">{new Date(show.date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+            <div className="font-bold text-accent">{show.event_name}</div>
+            <div>{show.venue}</div>
+            <div className="text-gray-400">{show.city}</div>
+            <a href={show.ticket_url || '#'} target="_blank" rel="noopener noreferrer" className="bg-hotpink text-white font-bold text-center px-4 py-2 rounded hover:bg-hotpink-hover transition-colors md:ml-auto">
+              Tickets
+            </a>
+          </div>
+        ))}
       </div>
-      <a href={show.ticketUrl} target="_blank" rel="noopener noreferrer" className="bg-hotpink text-white font-bold px-8 py-2 rounded-full shadow-lg hover:bg-hotpink-hover transition-all transform hover:scale-105">
-        Tickets
-      </a>
-    </li>
-  );
+    </div>
+  </section>
+);
+
+const Footer: React.FC<{ artistInfo: ArtistInfo, onLogout: () => void, isLoggedIn: boolean }> = ({ artistInfo, onLogout, isLoggedIn }) => {
+  const socials = artistInfo.socials as Socials | null;
+  return (
+    <footer className="bg-secondary py-12">
+      <div className="container mx-auto px-4 text-center">
+        <div className="flex justify-center space-x-6 mb-6">
+          {socials?.instagram && <a href={socials.instagram} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Instagram</a>}
+          {socials?.twitter && <a href={socials.twitter} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Twitter</a>}
+          {socials?.facebook && <a href={socials.facebook} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Facebook</a>}
+          {socials?.spotify && <a href={socials.spotify} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Spotify</a>}
+          {socials?.soundcloud && <a href={socials.soundcloud} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">SoundCloud</a>}
+        </div>
+        <p className="text-gray-500">&copy; {new Date().getFullYear()} {artistInfo.artist_name || 'Artist Name'}. All Rights Reserved.</p>
+        {isLoggedIn && (
+          <button onClick={onLogout} className="mt-4 text-sm text-gray-600 hover:text-hotpink">Logout Admin</button>
+        )}
+      </div>
+    </footer>
+  )
 };
-
-interface FooterProps {
-    content: Content;
-    isLoggedIn: boolean;
-    onLogout: () => void;
-}
-const Footer: React.FC<FooterProps> = ({ content, isLoggedIn, onLogout }) => {
-    const toggleAdmin = () => {
-        if (window.location.hash === '#admin') {
-            onLogout();
-        } else {
-            window.location.hash = '#admin';
-        }
-    }
-    return (
-        <footer className="bg-primary border-t border-secondary/50 py-8 text-center text-gray-500">
-            <div className="container mx-auto">
-                <div className="flex justify-center space-x-6 mb-4">
-                     {Object.entries(content.socials).map(([platform, url]) => (
-                      <a key={platform} href={url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-accent transition-colors">
-                        <PlatformIcon platform={platform as any} className="w-7 h-7"/>
-                      </a>
-                    ))}
-                </div>
-                <p>&copy; {new Date().getFullYear()} {content.artistName}. All Rights Reserved.</p>
-                <button onClick={toggleAdmin} title={isLoggedIn ? "Logout from Admin" : "Toggle Admin Panel"} className="mt-4 text-gray-600 hover:text-accent transition-colors">
-                     <svg className="w-5 h-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-                    </svg>
-                    <span className="text-xs ml-1">{isLoggedIn ? 'Logout' : 'Admin'}</span>
-                </button>
-            </div>
-        </footer>
-    );
-}
-
 
 export default App;
