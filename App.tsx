@@ -32,6 +32,7 @@ const App: React.FC = () => {
         const { data: showsData, error: showsError } = await supabase
           .from('shows')
           .select('*')
+          .gte('date', new Date().toISOString())
           .order('date', { ascending: true });
         if (showsError) throw showsError;
         setShows(showsData);
@@ -89,6 +90,7 @@ const App: React.FC = () => {
     const { data: showsData, error: showsError } = await supabase
       .from('shows')
       .select('*')
+      .gte('date', new Date().toISOString())
       .order('date', { ascending: true });
     if (showsData) setShows(showsData);
 
@@ -284,9 +286,6 @@ const Footer: React.FC<{ artistInfo: ArtistInfo, onLogout: () => void, isLoggedI
       <div className="container mx-auto px-4 text-center">
         <div className="flex justify-center space-x-6 mb-6">
           {socials?.instagram && <a href={socials.instagram} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Instagram</a>}
-          {socials?.twitter && <a href={socials.twitter} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Twitter</a>}
-          {socials?.facebook && <a href={socials.facebook} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Facebook</a>}
-          {socials?.spotify && <a href={socials.spotify} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Spotify</a>}
           {socials?.soundcloud && <a href={socials.soundcloud} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">SoundCloud</a>}
         </div>
         <p className="text-gray-500">&copy; {new Date().getFullYear()} {artistInfo.artist_name || 'Artist Name'}. All Rights Reserved.</p>
