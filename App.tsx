@@ -1,16 +1,9 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { ArtistInfo, Show, Release, Socials } from './types';
-import { AdminPanel } from './components/AdminPanel';
 import { PlatformIcon } from './components/icons/PlatformIcons';
-import { Modal } from './components/common/Modal';
 import { supabase } from './supabase/supabase';
-import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [artistInfo, setArtistInfo] = useState<ArtistInfo | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
   const [shows, setShows] = useState<Show[]>([]);
@@ -39,16 +32,10 @@ const App: React.FC = () => {
 
         const { data: releasesData, error: releasesError } = await supabase
           .from('releases')
-          .select(`
-                *,
-                release_links (
-                    *
-                )
-            `)
+          .select(`*, release_links(*)`)
           .order('id', { ascending: false });
         if (releasesError) throw releasesError;
         setReleases(releasesData as Release[]);
-
       } catch (err: any) {
         console.error("Error fetching data:", err);
         setError("Could not load artist data. Please check the connection and configuration.");
@@ -58,48 +45,22 @@ const App: React.FC = () => {
     };
 
     fetchData();
-
-    // Set up auth listener
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    // Set up admin panel visibility listener
-    const handleHashChange = () => {
-      setIsAdmin(window.location.hash === '#admin');
-    };
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-
-    return () => {
-      subscription.unsubscribe();
-      window.removeEventListener('hashchange', handleHashChange);
-    };
   }, []);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  }
-
   const refreshData = async () => {
-    // This is a simplified refresh, a more robust solution might involve re-fetching specific data
-    const { data: showsData, error: showsError } = await supabase
+    const { data: showsData } = await supabase
       .from('shows')
       .select('*')
       .gte('date', new Date().toISOString())
       .order('date', { ascending: true });
     if (showsData) setShows(showsData);
 
-    const { data: releasesData, error: releasesError } = await supabase
+    const { data: releasesData } = await supabase
       .from('releases')
       .select(`*, release_links(*)`)
       .order('id', { ascending: false });
     if (releasesData) setReleases(releasesData as Release[]);
-  }
+  };
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl animate-pulse">Loading...</div>;
@@ -107,80 +68,20 @@ const App: React.FC = () => {
   if (error || !artistInfo) {
     return <div className="min-h-screen flex items-center justify-center bg-primary text-hotpink font-heading text-2xl p-8 text-center">{error}</div>;
   }
-  console.log(artistInfo.logo_url);
 
   return (
-    <div className={`bg-primary text-gray-200 min-h-screen ${isAdmin && session ? 'pb-96' : ''}`}>
+    <div className={`bg-primary text-gray-200 min-h-screen`}>
       <Header artistInfo={artistInfo} />
       <main>
         <HeroSection artistInfo={artistInfo} />
         <MusicSection releases={releases} artistInfo={artistInfo} />
         <ShowsSection shows={shows} />
       </main>
-      <Footer artistInfo={artistInfo} onLogout={handleLogout} isLoggedIn={!!session} />
-      {isAdmin && !session && <Auth />}
-      {isAdmin && session && <AdminPanel shows={shows} releases={releases} onDataChange={refreshData} />}
+      <Footer artistInfo={artistInfo} />
     </div>
   );
 };
 
-// Authentication Component
-const Auth: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setSuccessMessage("Sign up successful! You can now sign in using the 'Sign In' tab.");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
-    } catch (err: any) {
-      setError(err.error_description || err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Modal isOpen={true} onClose={() => { window.location.hash = '' }} title={isSignUp ? 'Admin Sign Up' : 'Admin Login'}>
-      <div className="p-4">
-        <div className="flex border-b border-gray-700 mb-4">
-          <button onClick={() => setIsSignUp(false)} className={`py-2 px-4 font-semibold ${!isSignUp ? 'text-accent border-b-2 border-accent' : 'text-gray-400'}`}>Sign In</button>
-          <button onClick={() => setIsSignUp(true)} className={`py-2 px-4 font-semibold ${isSignUp ? 'text-accent border-b-2 border-accent' : 'text-gray-400'}`}>Sign Up</button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <p className="text-sm text-gray-400">
-            {isSignUp ? 'Create the admin account. This should only be done once.' : 'Sign in to manage content.'}
-          </p>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="w-full bg-gray-700 p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-accent" />
-          {successMessage && !error && <p className="text-green-400 text-sm">{successMessage}</p>}
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button type="submit" disabled={loading} className="w-full bg-hotpink text-white font-bold px-4 py-2 rounded hover:bg-hotpink-hover transition-colors disabled:bg-gray-500">
-            {loading ? 'Loading...' : (isSignUp ? 'Sign Up' : 'Sign In')}
-          </button>
-        </form>
-      </div>
-    </Modal>
-  );
-};
-
-
-// UI Components
 const Header: React.FC<{ artistInfo: ArtistInfo }> = ({ artistInfo }) => (
   <header className="absolute top-0 left-0 right-0 z-10 p-4">
     <div className="container mx-auto flex justify-center md:justify-start">
@@ -201,20 +102,19 @@ const HeroSection: React.FC<{ artistInfo: ArtistInfo }> = ({ artistInfo }) => (
       >
         {artistInfo.artist_name}
       </h1>
-      <style jsx global>{`
-  @keyframes black-pulse {
-    0%, 100% {
-      text-shadow: 0 0 5px black;
-    }
-    50% {
-      text-shadow: 0 0 15px black, 0 0 25px black, 0 0 35px black;
-    }
-  }
-
-  .pulsating-black {
-    animation: black-pulse 2.5s ease-in-out infinite;
-  }
-`}</style>
+      <style jsx='true' global='true'>{`
+        @keyframes black-pulse {
+          0%, 100% {
+            text-shadow: 0 0 5px black;
+          }
+          50% {
+            text-shadow: 0 0 15px black, 0 0 25px black, 0 0 35px black;
+          }
+        }
+        .pulsating-black {
+          animation: black-pulse 2.5s ease-in-out infinite;
+        }
+      `}</style>
 
       <a href="#music" className="mt-8 inline-block bg-accent text-primary font-bold uppercase px-8 py-3 rounded-full hover:bg-accent-hover transition-transform transform hover:scale-105">
         Listen Now
@@ -279,7 +179,7 @@ const ShowsSection: React.FC<{ shows: Show[] }> = ({ shows }) => (
   </section>
 );
 
-const Footer: React.FC<{ artistInfo: ArtistInfo, onLogout: () => void, isLoggedIn: boolean }> = ({ artistInfo, onLogout, isLoggedIn }) => {
+const Footer: React.FC<{ artistInfo: ArtistInfo }> = ({ artistInfo }) => {
   const socials = artistInfo.socials as Socials | null;
   return (
     <footer className="bg-secondary py-12">
@@ -289,12 +189,9 @@ const Footer: React.FC<{ artistInfo: ArtistInfo, onLogout: () => void, isLoggedI
           {socials?.soundcloud && <a href={socials.soundcloud} target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">SoundCloud</a>}
         </div>
         <p className="text-gray-500">&copy; {new Date().getFullYear()} {artistInfo.artist_name || 'Artist Name'}. All Rights Reserved.</p>
-        {isLoggedIn && (
-          <button onClick={onLogout} className="mt-4 text-sm text-gray-600 hover:text-hotpink">Logout Admin</button>
-        )}
       </div>
     </footer>
-  )
+  );
 };
 
 export default App;
